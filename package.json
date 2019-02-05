@@ -1,0 +1,21 @@
+{
+  "name": "multi-lock-queue",
+  "version": "1.0.0",
+  "description": "optimally parallelize tasks that lock on potentially intersecting sets of ids",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "queue",
+    "mutex",
+    "mutual-exclusion",
+    "locks",
+    "locking-queue"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "tape": "~4.9.2"
+  }
+}
