@@ -3,20 +3,20 @@ const { createLockingQueue } = require('./')
 const wait = millis => new Promise(resolve => setTimeout(resolve, millis))
 const tasksFixture = [
   {
-    locks: ['a', 'b', 'c'],
+    locks: ['a', 'b', 'c']
   },
   {
-    locks: ['d'],
+    locks: ['d']
   },
   {
-    locks: ['a'],
+    locks: ['a']
   },
   {
-    locks: ['b', 'c'],
+    locks: ['b', 'c']
   },
   {
-    locks: ['a', 'b', 'c'],
-  },
+    locks: ['a', 'b', 'c']
+  }
 ].map((task, i) => ({ ...task, name: i, duration: 100 }))
 
 const setup = () => {
@@ -30,7 +30,7 @@ const setup = () => {
       await wait(duration)
       return name
     },
-    locks,
+    locks
   })
 
   const enqueue = async task => {
@@ -45,7 +45,7 @@ const setup = () => {
     started,
     results,
     getRunning: () => q.getRunning().map(t => t.name),
-    getQueued: () => q.getQueued().map(t => t.name),
+    getQueued: () => q.getQueued().map(t => t.name)
   }
 }
 
@@ -71,17 +71,13 @@ test('parallelize if possible', async t => {
   t.equal(started[tasksFixture[1].name], true)
   await Promise.all(oneAndTwo)
 
-  t.deepEqual(
-    results,
-    tasksFixture.slice(0, 2).map(t => t.name),
-    'tasks queued in parallel return correct results'
-  )
+  t.deepEqual(results, tasksFixture.slice(0, 2).map(t => t.name), 'tasks queued in parallel return correct results')
 
   t.end()
 })
 
 test('mutual exclusion', async t => {
-  const { enqueue, results, started, getRunning, getQueued } = setup()
+  const { enqueue, getRunning, getQueued } = setup()
   const oneTwoThree = tasksFixture.slice(0, 3).map(enqueue)
 
   t.deepEqual(getRunning(), [0, 1])
@@ -94,7 +90,7 @@ test('mutual exclusion', async t => {
 })
 
 test('parallelize in order of enqueueing', async t => {
-  const { enqueue, results, started, getRunning, getQueued } = setup()
+  const { enqueue, results, getRunning, getQueued } = setup()
   const promises = tasksFixture.map(enqueue)
 
   t.deepEqual(getRunning(), [0, 1])
@@ -112,14 +108,15 @@ test('parallelize in order of enqueueing', async t => {
   t.end()
 })
 
-test('pause, resume', async t => {
-  const { enqueue, results, started, getRunning, getQueued, q } = setup()
+test('pause, resume, onEmpty', async t => {
+  const { enqueue, results, getRunning, getQueued, q } = setup()
   const firstHalf = tasksFixture.slice(0, 3)
   const secondHalf = tasksFixture.slice(3)
 
-  const promisesFirstHalf = firstHalf.map(enqueue)
+  firstHalf.forEach(enqueue)
+
   const pausePromise = q.pause()
-  const promisesSecondHalf = secondHalf.map(enqueue)
+  secondHalf.forEach(enqueue)
 
   await pausePromise
 
@@ -131,5 +128,8 @@ test('pause, resume', async t => {
   await q.onEmpty()
 
   t.same(results, tasksFixture.map(t => t.name))
+  t.equal(q.getRunning().length, 0)
+  t.equal(q.getQueued().length, 0)
+
   t.end()
 })

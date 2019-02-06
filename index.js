@@ -2,126 +2,139 @@ const { EventEmitter } = require('events')
 const { partition } = require('./partition')
 
 const RESOLVED = Promise.resolve()
+const EVENTS = {
+  EMPTY_PREPAUSE: 'empty:prepause',
+  EMPTY: 'empty'
+}
 
 const promiseOnce = (emitter, event) => new Promise(resolve => emitter.once(event, resolve))
 
-const createLockingQueue = () => {
-  const ee = new EventEmitter()
-  const onEmpty = () => locks.size ? promiseOnce(ee, 'empty') : RESOLVED
+class LockingQueue {
+  constructor() {
+    // internal events
+    this.ee = new EventEmitter()
+    // many things might want to wait for onEmpty
+    this.ee.setMaxListeners(0)
 
-  let queued = []
-  let queuedBeforePause = []
-  const getQueued = () => queuedBeforePause.concat(queued)
+    this._queued = []
+    this._queuedBeforePause = []
+    this._running = new Set()
+    this._attemptLock = this._attemptLock.bind(this)
+    this._locks = new Set()
+    this._paused = false
+  }
+
+  onEmpty() {
+    return this._locks.size ? promiseOnce(this.ee, EVENTS.EMPTY) : RESOLVED
+  }
+
+  getQueued() {
+    return this._queuedBeforePause.concat(this._queued)
+  }
+
+  getRunning() {
+    return Array.from(this._running)
+  }
 
   // PAUSE / RESUME
 
-  let paused
-  const isPaused = () => paused
-
-  const resume = () => {
-    if (!paused) return
-
-    paused = false
-    processQueue(queued)
+  isPaused() {
+    return this._paused
   }
 
-  const pause = () => {
-    if (paused) return RESOLVED
+  resume() {
+    if (!this._paused) return
 
-    paused = true
-    queuedBeforePause = queued.slice()
-    queued = []
-    return onEmpty()
+    this._paused = false
+    this._processQueue(this._queued)
   }
 
-  // LOCK / RELEASE
+  pause() {
+    if (this._paused) return RESOLVED
 
-  const running = new Set()
-  const getRunning = () => Array.from(running)
+    this._paused = true
+    this._queuedBeforePause = this._queued.slice()
+    this._queued.length = 0
+    return promiseOnce(this.ee, EVENTS.EMPTY_PREPAUSE)
+  }
 
-  const locks = new Set()
+  // PAUSE / RESUME
 
-  const attemptLock = task => {
+  release(task) {
+    this._running.delete(task)
+
     for (const id of task.locks) {
-      if (locks.has(id)) {
+      this._locks.delete(id)
+    }
+
+    if (this._paused) {
+      this._queuedBeforePause = this._processQueue(this._queuedBeforePause)
+    } else {
+      this._queued = this._processQueue(this._queued)
+    }
+  }
+
+  _attemptLock(task) {
+    for (const id of task.locks) {
+      if (this._locks.has(id)) {
         return false
       }
     }
 
     for (const id of task.locks) {
-      locks.add(id)
+      this._locks.add(id)
     }
 
     return true
   }
 
-  const release = task => {
-    running.delete(task)
+  // QUEUE
 
-    for (const id of task.locks) {
-      locks.delete(id)
-    }
+  enqueue(task) {
+    return new Promise((resolve, reject) => {
+      // make a defensive copy
+      task = { ...task }
+      task.resolve = resolve
+      task.reject = reject
 
-    if (paused) {
-      queuedBeforePause = processQueue(queuedBeforePause)
-    } else {
-      queued = processQueue(queued)
-    }
+      if (this._paused || !this._attemptLock(task)) {
+        this._queued.push(task)
+      } else {
+        this._run(task)
+      }
+    })
   }
 
-  const processQueue = queue => {
-    let runnable
-    ([runnable, stillQueued] = partition(queue, attemptLock))
+  _processQueue(queue) {
+    const [runnable, stillQueued] = partition(queue, this._attemptLock)
 
     for (const task of runnable) {
-      run(task)
+      this._run(task)
     }
 
-    if (!locks.size) ee.emit('empty')
+    if (!this._locks.size) {
+      // Note: if the queue is paused, this only means the tasks
+      // queued up before pause() have completed. There may be more tasks queued after
+      this.ee.emit(this._paused ? EVENTS.EMPTY_PREPAUSE : EVENTS.EMPTY)
+    }
 
     return stillQueued
   }
 
-  // QUEUE
-
-  const run = async task => {
-    running.add(task)
+  async _run(task) {
+    this._running.add(task)
     try {
       task.resolve(await task.fn())
     } catch (err) {
       task.reject(err)
     } finally {
-      release(task)
+      this.release(task)
     }
-  }
-
-  const enqueue = task => new Promise((resolve, reject) => {
-    // make a defensive copy
-    task = { ...task }
-    task.resolve = resolve
-    task.reject = reject
-
-    if (paused || !attemptLock(task)) {
-      queued.push(task)
-    } else {
-      run(task)
-    }
-  })
-
-  return {
-    enqueue,
-    pause,
-    resume,
-    isPaused,
-    onEmpty,
-    // for testing
-    getRunning,
-    getQueued,
-    on: ee.on.bind(ee),
-    once: ee.once.bind(ee),
   }
 }
 
+const createLockingQueue = opts => new LockingQueue(opts)
+
 module.exports = {
-  createLockingQueue,
+  createLockingQueue
 }

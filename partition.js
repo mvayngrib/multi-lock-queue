@@ -10,5 +10,5 @@ const partition = (arr, condition) => {
 }
 
 module.exports = {
-  partition,
+  partition
 }
