@@ -4,7 +4,7 @@
   "description": "optimally parallelize tasks that lock on potentially intersecting sets of ids",
   "main": "index.js",
   "scripts": {
-    "test": "node test.js",
+    "test": "NODE_ENV=test node test.js",
     "lint": "eslint --quiet --ignore-path .gitignore .",
     "prettier": "prettier --single-quote --write '**/*.js'",
     "pre-commit": "npm run prettier && npm run lint",

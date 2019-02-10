@@ -1,40 +1,124 @@
+if (process.env.NODE_ENV !== 'test') {
+  throw new Error('please run with NODE_ENV=test')
+}
+
 const test = require('tape')
 const { createLockingQueue } = require('./')
 const wait = millis => new Promise(resolve => setTimeout(resolve, millis))
+const toTask = (locks, i) => ({ locks, name: i, duration: 50 })
+const getTaskName = t => t.name
+
 const tasksFixture = [
+  ['a', 'b', 'c'],
+  ['d'],
+  ['a'],
+  ['b', 'c'],
+  ['a', 'b', 'c'],
+].map(toTask)
+
+const orderFixture = [
   {
-    locks: ['a', 'b', 'c']
+    name: 'mostly in order',
+    tasks: [
+      ['a', 'b', 'c'],
+      ['d'],
+      ['a'],
+      ['a', 'b'],
+      ['b', 'c'],
+    ].map(toTask),
+    concurrent: [
+      [0, 1],     // a,b,c & d
+      [1, 2],     // d & a
+      [1, 2, 4]   // d & a & b,c
+    ],
+    initialConcurrency: 2,
+    initialQueueSize: 3,
+    results: [0, 1, 2, 4, 3],
   },
   {
-    locks: ['d']
+    name: 'all concurrent',
+    tasks: [
+      ['a'],
+      ['b'],
+      ['c'],
+      ['d'],
+      ['e'],
+    ].map(toTask),
+    initialConcurrency: 5,
+    initialQueueSize: 0,
+    results: [0, 1, 2, 3, 4],
   },
   {
-    locks: ['a']
+    name: 'stable (competing tasks execute in order they were enqueued)',
+    tasks: [
+      ['a', 'b'],
+      ['b'],
+      ['c'],
+      ['b'],
+    ].map(toTask),
+    concurrent: [
+      [ 0, 2 ], // a,b & c
+      [ 2, 1 ]  // c & b
+    ],
+    initialConcurrency: 2,
+    initialQueueSize: 2,
+    results: [0, 2, 1, 3],
   },
   {
-    locks: ['b', 'c']
+    name: 'all mutually exclusive',
+    tasks: [
+      ['a', 'b', 'c'],
+      ['b', 'c', 'd'],
+      ['c', 'd', 'e'],
+    ].map(toTask),
+    concurrent: [],
+    initialConcurrency: 1,
+    initialQueueSize: 2,
+    results: [0, 1, 2],
   },
   {
-    locks: ['a', 'b', 'c']
-  }
-].map((task, i) => ({ ...task, name: i, duration: 100 }))
+    name: 'failure tolerance',
+    tasks: (() => {
+      const tasks = [
+        ['a'],
+        ['a', 'b'],
+        ['a', 'b', 'c'],
+      ].map(toTask)
+
+      tasks[1].fail = true
+      return tasks
+    })(),
+    concurrent: [],
+    initialConcurrency: 1,
+    initialQueueSize: 2,
+    results: [0, 2],
+    errors: [1],
+  },
+]
 
 const setup = () => {
   const q = createLockingQueue()
-  const started = {}
   const results = []
-  const createDelayedEchoNameTask = ({ name, locks, duration = 1000 }) => ({
+  const errors = []
+  const createDelayedEchoNameTask = ({ name, locks, duration = 1000, fail }) => ({
     name,
     fn: async () => {
-      started[name] = true
       await wait(duration)
+      if (fail) throw new Error(`task failed: ${name}`)
       return name
     },
     locks
   })
 
   const enqueue = async task => {
-    const result = await q.enqueue(createDelayedEchoNameTask(task))
+    let result
+    try {
+      result = await q.enqueue(createDelayedEchoNameTask(task))
+    } catch (err) {
+      errors.push(task.name)
+      return
+    }
+
     results.push(result)
     return result
   }
@@ -42,69 +126,34 @@ const setup = () => {
   return {
     q,
     enqueue,
-    started,
     results,
-    getRunning: () => q.getRunning().map(t => t.name),
-    getQueued: () => q.getQueued().map(t => t.name)
+    errors,
+    getRunning: () => q._getRunning().map(getTaskName),
+    getQueued: () => q._getQueued().map(getTaskName)
   }
 }
 
-test('single task', async t => {
-  const { enqueue, results, started } = setup()
-  const first = tasksFixture[0]
-  const promiseFirst = enqueue(first)
+test('order of execution, concurrency', async t => {
+  await Promise.all(orderFixture.map(async ({ tasks, ...expected }) => {
+    const { enqueue, errors, results, getRunning, getQueued, q } = setup()
+    const concurrent = []
+    q.ee.on('concurrent', tasks => concurrent.push(tasks.map(getTaskName)))
 
-  t.equal(started[first.name], true)
-  await promiseFirst
+    tasks.forEach(enqueue)
+    t.equal(q.concurrency, expected.initialConcurrency)
+    t.equal(q.size, expected.initialQueueSize)
+    await q.onEmpty()
 
-  t.deepEqual(results, [first.name], 'task returns correct result')
-  t.end()
-})
+    t.same(results, expected.results)
+    if (expected.errors) {
+      t.same(errors, expected.errors)
+    }
 
-test('parallelize if possible', async t => {
-  const { enqueue, results, started, getRunning, getQueued } = setup()
-  const oneAndTwo = tasksFixture.slice(0, 2).map(enqueue)
+    if (expected.concurrent) {
+      t.same(concurrent, expected.concurrent)
+    }
+  }))
 
-  t.equal(getRunning().length, 2)
-  t.equal(getQueued().length, 0)
-  t.equal(started[tasksFixture[0].name], true)
-  t.equal(started[tasksFixture[1].name], true)
-  await Promise.all(oneAndTwo)
-
-  t.deepEqual(results, tasksFixture.slice(0, 2).map(t => t.name), 'tasks queued in parallel return correct results')
-
-  t.end()
-})
-
-test('mutual exclusion', async t => {
-  const { enqueue, getRunning, getQueued } = setup()
-  const oneTwoThree = tasksFixture.slice(0, 3).map(enqueue)
-
-  t.deepEqual(getRunning(), [0, 1])
-  t.deepEqual(getQueued(), [2])
-
-  await oneTwoThree[0]
-  t.equal(getRunning().includes(2), true)
-
-  t.end()
-})
-
-test('parallelize in order of enqueueing', async t => {
-  const { enqueue, results, getRunning, getQueued } = setup()
-  const promises = tasksFixture.map(enqueue)
-
-  t.deepEqual(getRunning(), [0, 1])
-  t.equal(getQueued().length, 3)
-  await promises[0]
-
-  t.deepEqual(getRunning().slice(-2), [2, 3])
-  t.deepEqual(getQueued(), [4])
-  await Promise.all(promises.slice(0, 4))
-
-  t.deepEqual(getRunning(), [4])
-  await Promise.all(promises)
-
-  t.deepEqual(results, tasksFixture.map(t => t.name))
   t.end()
 })
 
@@ -118,18 +167,27 @@ test('pause, resume, onEmpty', async t => {
   const pausePromise = q.pause()
   secondHalf.forEach(enqueue)
 
+  t.equal(q._queuedBeforePause.length + q.concurrency, firstHalf.length)
+  t.equal(q._queued.length, secondHalf.length)
+
   await pausePromise
 
-  t.deepEqual(results, firstHalf.map(t => t.name))
+  t.deepEqual(results, firstHalf.map(getTaskName))
   t.deepEqual(getRunning(), [])
-  t.deepEqual(getQueued(), secondHalf.map(t => t.name))
+  t.deepEqual(getQueued(), secondHalf.map(getTaskName))
 
   q.resume()
   await q.onEmpty()
 
-  t.same(results, tasksFixture.map(t => t.name))
-  t.equal(q.getRunning().length, 0)
-  t.equal(q.getQueued().length, 0)
+  t.same(results, tasksFixture.map(getTaskName))
+  t.equal(q.concurrency, 0)
+  t.equal(q.size, 0)
+
+  tasksFixture.map(enqueue)
+  t.equal(q.concurrency, 2)
+  t.equal(q.size, tasksFixture.length - 2)
+
+  await q.onEmpty()
 
   t.end()
 })

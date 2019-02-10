@@ -8,6 +8,7 @@ const EVENTS = {
 }
 
 const promiseOnce = (emitter, event) => new Promise(resolve => emitter.once(event, resolve))
+const TESTING = process.env.NODE_ENV === 'test'
 
 class LockingQueue {
   constructor() {
@@ -24,15 +25,24 @@ class LockingQueue {
     this._paused = false
   }
 
+  get size() {
+    return this._queuedBeforePause.length + this._queued.length
+  }
+
+  get concurrency() {
+    return this._running.size
+  }
+
   onEmpty() {
     return this._locks.size ? promiseOnce(this.ee, EVENTS.EMPTY) : RESOLVED
   }
 
-  getQueued() {
+  // for testing
+  _getQueued() {
     return this._queuedBeforePause.concat(this._queued)
   }
 
-  getRunning() {
+  _getRunning() {
     return Array.from(this._running)
   }
 
@@ -123,6 +133,15 @@ class LockingQueue {
 
   async _run(task) {
     this._running.add(task)
+
+    if (TESTING) {
+      const running = this._getRunning(this._running)
+      this.ee.emit('running', running)
+      if (this._running.size > 1) {
+        this.ee.emit('concurrent', running)
+      }
+    }
+
     try {
       task.resolve(await task.fn())
     } catch (err) {
