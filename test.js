@@ -5,6 +5,7 @@ if (process.env.NODE_ENV !== 'test') {
 const test = require('tape')
 const { createLockingQueue } = require('./')
 const wait = millis => new Promise(resolve => setTimeout(resolve, millis))
+const waitAndReturn = (millis, result) => wait(millis).then(() => result)
 const toTask = (locks, i) => ({ locks, name: i, duration: 50 })
 const getTaskName = t => t.name
 
@@ -205,5 +206,19 @@ test('no locks, full concurency', async t => {
 
   t.equal(getRunning().length, n)
   t.equal(getQueued().length, 0)
+  t.end()
+})
+
+test('use as simple queue (with default lock)', async t => {
+  const q = createLockingQueue()
+  const expectedResults = ['a', 'b', 'c']
+  const resultsPromise = Promise.all(expectedResults.map(result => {
+    return q.enqueue(() => waitAndReturn(50, result))
+  }))
+
+  t.equal(q._getRunning().length, 1)
+  t.equal(q._getQueued().length, 2)
+  t.same(await resultsPromise, expectedResults)
+
   t.end()
 })

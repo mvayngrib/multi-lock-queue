@@ -9,6 +9,7 @@ const EVENTS = {
 
 const promiseOnce = (emitter, event) => new Promise(resolve => emitter.once(event, resolve))
 const TESTING = process.env.NODE_ENV === 'test'
+const DEFAULT_LOCK = Symbol('default-lock')
 
 class LockingQueue {
   constructor() {
@@ -104,6 +105,10 @@ class LockingQueue {
 
   enqueue(task) {
     return new Promise((resolve, reject) => {
+      if (typeof task === 'function') {
+        task = { fn: task, locks: [DEFAULT_LOCK] }
+      }
+
       // make a defensive copy
       task = { ...task, locks: task.locks || [] }
       task.resolve = resolve
