@@ -191,3 +191,19 @@ test('pause, resume, onEmpty', async t => {
 
   t.end()
 })
+
+test('no locks, full concurency', async t => {
+  const { enqueue, results, getRunning, getQueued, q } = setup()
+  let n = 10
+
+  for (let i = 0; i < n; i++) {
+    enqueue({
+      name: i,
+      duration: 50,
+    })
+  }
+
+  t.equal(getRunning().length, n)
+  t.equal(getQueued().length, 0)
+  t.end()
+})

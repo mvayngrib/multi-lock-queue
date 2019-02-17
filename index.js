@@ -85,13 +85,15 @@ class LockingQueue {
   }
 
   _attemptLock(task) {
-    for (const id of task.locks) {
+    const { locks } = task
+
+    for (const id of locks) {
       if (this._locks.has(id)) {
         return false
       }
     }
 
-    for (const id of task.locks) {
+    for (const id of locks) {
       this._locks.add(id)
     }
 
@@ -103,7 +105,7 @@ class LockingQueue {
   enqueue(task) {
     return new Promise((resolve, reject) => {
       // make a defensive copy
-      task = { ...task }
+      task = { ...task, locks: task.locks || [] }
       task.resolve = resolve
       task.reject = reject
 
