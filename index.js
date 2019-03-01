@@ -24,7 +24,9 @@ class LockingQueue {
     this._running = new Set()
     this._attemptLock = this._attemptLock.bind(this)
     this._locks = new Set()
+    // if this._paused is true, new tasks will be enqueued only after resume
     this._paused = false
+    this._pausePromise = null
   }
 
   get size() {
@@ -58,13 +60,24 @@ class LockingQueue {
     if (!this._paused) return
 
     this._paused = false
+    this._pausePromise = null
     this._processQueue(this._queued)
   }
 
   pause() {
-    if (this._paused) return RESOLVED
+    if (!this._paused) {
+      this._pausePromise = this._pause()
+      this._paused = true
+    }
 
-    this._paused = true
+    return this._pausePromise
+  }
+
+  _pause() {
+    if (this._paused) {
+      throw new Error(`illegal invocation`)
+    }
+
     if (!(this.size || this.concurrency)) {
       return RESOLVED
     }
