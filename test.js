@@ -160,7 +160,7 @@ test('order of execution, concurrency', async t => {
 
 test('pause, resume, onEmpty', async t => {
   const { enqueue, results, getRunning, getQueued, q } = setup()
-  
+
   await q.pause()
   t.pass('pauses when nothing is queued or running')
   q.resume()
@@ -169,8 +169,8 @@ test('pause, resume, onEmpty', async t => {
   const secondHalf = tasksFixture.slice(3)
 
   firstHalf.forEach(enqueue)
-
   const pausePromise = q.pause()
+  t.equal(pausePromise, q.pause(), 'pause promise is cached')
   secondHalf.forEach(enqueue)
 
   t.equal(q._queuedBeforePause.length + q.concurrency, firstHalf.length)
