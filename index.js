@@ -65,6 +65,10 @@ class LockingQueue {
     if (this._paused) return RESOLVED
 
     this._paused = true
+    if (!(this.size || this.concurrency)) {
+      return RESOLVED
+    }
+
     this._queuedBeforePause = this._queued.slice()
     this._queued.length = 0
     return promiseOnce(this.ee, EVENTS.EMPTY_PREPAUSE)
