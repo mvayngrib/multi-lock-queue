@@ -160,6 +160,11 @@ test('order of execution, concurrency', async t => {
 
 test('pause, resume, onEmpty', async t => {
   const { enqueue, results, getRunning, getQueued, q } = setup()
+  
+  await q.pause()
+  t.pass('pauses when nothing is queued or running')
+  q.resume()
+
   const firstHalf = tasksFixture.slice(0, 3)
   const secondHalf = tasksFixture.slice(3)
 
