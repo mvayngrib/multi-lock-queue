@@ -1,6 +1,7 @@
 const { EventEmitter } = require('events')
 const { partition } = require('./partition')
 
+// cached resolved promise, to avoid creating unnecessary promises later
 const RESOLVED = Promise.resolve()
 const EVENTS = {
   EMPTY_PREPAUSE: 'empty:prepause',

@@ -1,4 +1,3 @@
-
 # multi-lock-queue
 
 tl;dr: optimally parallelize tasks that lock on potentially intersecting sets of ids
@@ -13,9 +12,30 @@ For when you need to:
 
 ## Usage
 
+### Basic Promise Queue
+
+```js
+const { createLockingQueue } = require('../')
+const q = createLockingQueue()
+const wait = millis =>
+  new Promise(resolve => {
+    setTimeout(resolve, millis)
+  })
+
+const waitAndPrint = (millis, msg) => wait(millis).then(() => console.log(msg))
+
+q.enqueue(() => waitAndPrint(100, 'a'))
+q.enqueue(() => waitAndPrint(50, 'b'))
+q.enqueue(() => waitAndPrint(20, 'c'))
+// a
+// b
+// c
+```
+
+### Queue With Locks
+
 ```js
 const { createLockingQueue } = require('multi-lock-queue')
-
 const q = createLockingQueue()
 
 q.enqueue({
@@ -53,5 +73,4 @@ q.enqueue({
 setTimeout(() => {
   q.resume() // continue processing queued tasks
 }, 1000)
-
 ```
