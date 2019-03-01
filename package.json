@@ -17,8 +17,8 @@
     "locks",
     "locking-queue"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "mvayngrib",
+  "license": "MIT",
   "devDependencies": {
     "eslint": "~5.13.0",
     "eslint-config-standard": "~12.0.0",
