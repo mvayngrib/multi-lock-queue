@@ -87,8 +87,6 @@ class LockingQueue {
     return promiseOnce(this.ee, EVENTS.EMPTY_PREPAUSE)
   }
 
-  // PAUSE / RESUME
-
   release(task) {
     this._running.delete(task)
 
